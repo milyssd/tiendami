@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env*
+!.env.example
+storage/
+*.log
+coverage/
+*.tsbuildinfo
+backups/
+*.sql
+*.mp4
+*.m3u8
+*.ts.enc
+playwright-report/
+test-results/
+!prisma/migrations/**/*.sql

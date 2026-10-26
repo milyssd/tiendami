@@ -1,0 +1,42 @@
+name: Validate
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: tiendami
+          MYSQL_USER: tiendami
+          MYSQL_PASSWORD: ci-only-not-production
+          MYSQL_ROOT_PASSWORD: ci-root-only-not-production
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s --health-timeout=5s --health-retries=15
+    env:
+      DATABASE_URL: mysql://tiendami:ci-only-not-production@127.0.0.1:3306/tiendami
+      APP_URL: http://localhost:3000
+      STORAGE_ROOT: ./storage/private
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Create ephemeral test keys
+        run: |
+          node -e "const c=require('crypto');const f=require('fs');for(const n of ['CODE_KEY_V1','STORAGE_SIGNING_KEY'])f.appendFileSync(process.env.GITHUB_ENV,n+'='+c.randomBytes(32).toString('base64')+'\n')"
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,424 @@
+generator client {
+ provider = "prisma-client-js"
+ engineType = "client"
+}
+datasource db {
+ provider = "mysql"
+ url = env("DATABASE_URL")
+}
+enum Role {
+ CUSTOMER
+ SUPPORT
+ ADMIN
+}
+enum ProductType {
+ PHYSICAL
+ DIGITAL
+ COURSE
+ SERVICE
+ DOWNLOAD
+}
+enum OrderStatus {
+ PENDING
+ PAID
+ REVIEW
+ PROCESSING
+ COMPLETED
+ CANCELLED
+ REFUNDED
+}
+enum FulfillmentStatus {
+ PENDING
+ PROCESSING
+ DELIVERED
+ SHIPPED
+ COMPLETED
+ REFUNDED
+}
+enum CodeStatus {
+ AVAILABLE
+ RESERVED
+ DELIVERED
+ DEFECTIVE
+}
+model User {
+ id String @id @default(uuid())
+ email String @unique
+ name String
+ passwordHash String
+ role Role @default(CUSTOMER)
+ verifiedAt DateTime?
+ phone String?
+ phoneVerifiedAt DateTime?
+ blocked Boolean @default(false)
+ totpCipher String? @db.Text
+ totpKeyVersion String?
+ totpPendingCipher String? @db.Text
+ totpPendingVersion String?
+ totpEnabled Boolean @default(false)
+ totpLastStep Int?
+ recoveryHashes Json?
+ failedLogins Int @default(0)
+ lockedUntil DateTime?
+ createdAt DateTime @default(now())
+ sessions Session[]
+ tokens AuthToken[]
+ addresses Address[]
+ orders Order[]
+ enrollments Enrollment[]
+ projects Project[]
+ reviews Review[]
+ wishes Wish[]
+ tickets Ticket[]
+}
+model Session {
+ id String @id @default(uuid())
+ tokenHash String @unique
+ twoFactorVerified Boolean @default(false)
+ userId String
+ user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+ expiresAt DateTime
+ createdAt DateTime @default(now())
+ userAgent String? @db.VarChar(512)
+}
+model AuthToken {
+ id String @id @default(uuid())
+ tokenHash String @unique
+ kind String
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ expiresAt DateTime
+}
+model Address {
+ id String @id @default(uuid())
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ city String
+ line String
+ reference String?
+ phone String
+}
+model Category {
+ id String @id @default(uuid())
+ slug String @unique
+ name String
+ parentId String?
+ parent Category? @relation("CategoryTree",fields:[parentId],references:[id])
+ children Category[] @relation("CategoryTree")
+ products Product[]
+ attributes Attribute[]
+}
+model Attribute {
+ id String @id @default(uuid())
+ categoryId String
+ category Category @relation(fields:[categoryId],references:[id],onDelete:Cascade)
+ name String
+ filterable Boolean @default(true)
+ values AttributeValue[]
+}
+model AttributeValue {
+ id String @id @default(uuid())
+ attributeId String
+ attribute Attribute @relation(fields:[attributeId],references:[id],onDelete:Cascade)
+ productId String
+ product Product @relation(fields:[productId],references:[id],onDelete:Cascade)
+ value String
+ @@unique([attributeId,productId])
+}
+model Brand {
+ id String @id @default(uuid())
+ name String @unique
+ products Product[]
+}
+model Product {
+ id String @id @default(uuid())
+ slug String @unique
+ name String
+ description String @db.Text
+ type ProductType
+ categoryId String
+ category Category @relation(fields:[categoryId],references:[id])
+ brandId String?
+ brand Brand? @relation(fields:[brandId],references:[id])
+ image String
+ imageAlt String
+ featured Boolean @default(false)
+ active Boolean @default(true)
+ seoTitle String?
+ seoDescription String? @db.VarChar(320)
+ createdAt DateTime @default(now())
+ variants Variant[]
+ attributes AttributeValue[]
+ reviews Review[]
+ wishes Wish[]
+ course Course?
+ downloadFileId String?
+}
+model Variant {
+ id String @id @default(uuid())
+ productId String
+ product Product @relation(fields:[productId],references:[id],onDelete:Cascade)
+ name String
+ sku String @unique
+ price Int
+ oldPrice Int?
+ stock Int @default(0)
+ platform String?
+ region String?
+ warrantyMonths Int @default(0)
+ codes DigitalCode[]
+ items OrderItem[]
+}
+model DigitalCode {
+ id String @id @default(uuid())
+ variantId String
+ variant Variant @relation(fields:[variantId],references:[id])
+ ciphertext String @db.Text
+ fingerprint String @unique
+ keyVersion String
+ status CodeStatus @default(AVAILABLE)
+ provider String
+ cost Int
+ expiresAt DateTime?
+ reservedUntil DateTime?
+ deliveredAt DateTime?
+ createdAt DateTime @default(now())
+ orderItemId String? @unique
+ orderItem OrderItem? @relation(fields:[orderItemId],references:[id])
+ reveals CodeReveal[]
+}
+model CodeReveal {
+ id String @id @default(uuid())
+ codeId String
+ code DigitalCode @relation(fields:[codeId],references:[id])
+ userId String
+ ipHash String
+ createdAt DateTime @default(now())
+}
+model Order {
+ id String @id @default(uuid())
+ number String @unique
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ status OrderStatus @default(PENDING)
+ subtotal Int
+ shipping Int
+ discount Int @default(0)
+ total Int
+ exchangeRate Decimal @db.Decimal(10,4)
+ riskScore Int @default(0)
+ paymentMethod String
+ paymentReference String? @unique
+ shippingAddress Json?
+ phone String
+ couponId String?
+ coupon Coupon? @relation(fields:[couponId],references:[id])
+ paidAt DateTime?
+ expiresAt DateTime
+ createdAt DateTime @default(now())
+ items OrderItem[]
+ files StoredFile[]
+ tickets Ticket[]
+}
+model OrderItem {
+ id String @id @default(uuid())
+ orderId String
+ order Order @relation(fields:[orderId],references:[id],onDelete:Cascade)
+ variantId String
+ variant Variant @relation(fields:[variantId],references:[id])
+ productName String
+ type ProductType
+ quantity Int
+ unitPrice Int
+ status FulfillmentStatus @default(PENDING)
+ tracking String?
+ serial String?
+ code DigitalCode?
+ enrollment Enrollment?
+ project Project?
+ download DownloadGrant?
+}
+model Course {
+ id String @id @default(uuid())
+ productId String @unique
+ product Product @relation(fields:[productId],references:[id])
+ instructor String
+ level String
+ modules CourseModule[]
+ enrollments Enrollment[]
+}
+model CourseModule {
+ id String @id @default(uuid())
+ courseId String
+ course Course @relation(fields:[courseId],references:[id],onDelete:Cascade)
+ title String
+ position Int
+ lessons Lesson[]
+}
+model Lesson {
+ id String @id @default(uuid())
+ moduleId String
+ module CourseModule @relation(fields:[moduleId],references:[id],onDelete:Cascade)
+ title String
+ text String? @db.Text
+ storagePath String?
+ preview Boolean @default(false)
+ position Int
+ progresses Progress[]
+}
+model Enrollment {
+ id String @id @default(uuid())
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ courseId String
+ course Course @relation(fields:[courseId],references:[id])
+ orderItemId String @unique
+ orderItem OrderItem @relation(fields:[orderItemId],references:[id])
+ expiresAt DateTime?
+ certificateCode String? @unique
+ progress Progress[]
+ @@unique([userId,courseId])
+}
+model Progress {
+ id String @id @default(uuid())
+ enrollmentId String
+ enrollment Enrollment @relation(fields:[enrollmentId],references:[id],onDelete:Cascade)
+ lessonId String
+ lesson Lesson @relation(fields:[lessonId],references:[id],onDelete:Cascade)
+ seconds Int @default(0)
+ completed Boolean @default(false)
+ @@unique([enrollmentId,lessonId])
+}
+model Project {
+ id String @id @default(uuid())
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ orderItemId String @unique
+ orderItem OrderItem @relation(fields:[orderItemId],references:[id])
+ stage String @default("BRIEFING")
+ brief Json?
+ events ProjectEvent[]
+ milestones Milestone[]
+}
+model ProjectEvent {
+ id String @id @default(uuid())
+ projectId String
+ project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+ authorId String
+ text String @db.Text
+ createdAt DateTime @default(now())
+}
+model Milestone {
+ id String @id @default(uuid())
+ projectId String
+ project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+ name String
+ amount Int
+ paidAt DateTime?
+ approvedAt DateTime?
+}
+model StoredFile {
+ id String @id @default(uuid())
+ ownerId String
+ orderId String?
+ order Order? @relation(fields:[orderId],references:[id])
+ path String @unique
+ mime String
+ bytes Int
+ originalBytes Int
+ createdAt DateTime @default(now())
+ grants DownloadGrant[]
+}
+model DownloadGrant {
+ id String @id @default(uuid())
+ orderItemId String @unique
+ orderItem OrderItem @relation(fields:[orderItemId],references:[id])
+ fileId String
+ file StoredFile @relation(fields:[fileId],references:[id])
+ count Int @default(0)
+ limit Int @default(10)
+ expiresAt DateTime?
+}
+model Coupon {
+ id String @id @default(uuid())
+ code String @unique
+ percent Int?
+ amount Int?
+ maxUses Int
+ used Int @default(0)
+ expiresAt DateTime
+ type ProductType?
+ orders Order[]
+}
+model Review {
+ id String @id @default(uuid())
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ productId String
+ product Product @relation(fields:[productId],references:[id])
+ rating Int
+ text String @db.Text
+ approved Boolean @default(false)
+ createdAt DateTime @default(now())
+ @@unique([userId,productId])
+}
+model Wish {
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ productId String
+ product Product @relation(fields:[productId],references:[id],onDelete:Cascade)
+ @@id([userId,productId])
+}
+model Ticket {
+ id String @id @default(uuid())
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ orderId String?
+ order Order? @relation(fields:[orderId],references:[id])
+ subject String
+ status String @default("OPEN")
+ assigneeId String?
+ messages TicketMessage[]
+ createdAt DateTime @default(now())
+}
+model TicketMessage {
+ id String @id @default(uuid())
+ ticketId String
+ ticket Ticket @relation(fields:[ticketId],references:[id],onDelete:Cascade)
+ authorId String
+ text String @db.Text
+ createdAt DateTime @default(now())
+}
+model Setting {
+ key String @id
+ value Json
+}
+model AuditLog {
+ id String @id @default(uuid())
+ actorId String
+ action String
+ entityId String
+ ipHash String
+ metadata Json?
+ createdAt DateTime @default(now())
+}
+model RateLimit {
+ key String @id
+ hits Int @default(1)
+ resetAt DateTime
+}
+model BlockEntry {
+ id String @id @default(uuid())
+ kind String
+ fingerprint String @unique
+ reason String
+}
+
+model MediaSession {
+ id String @id @default(uuid())
+ tokenHash String @unique
+ userId String
+ lessonId String
+ expiresAt DateTime
+ @@index([userId,expiresAt])
+}
